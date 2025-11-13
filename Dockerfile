@@ -14,5 +14,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the service through Uvicorn.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4000", "--ssl-keyfile", "cert/key.pem", "--ssl-certfile", "cert/cert.pem"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4000"]
 

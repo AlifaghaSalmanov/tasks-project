@@ -5,6 +5,10 @@ import uvicorn
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"message": "Hello, World!"}
+
 @app.post("/attendee/webhook")
 async def attendee_webhook(req: Request):
     """Log webhook payloads so they are easy to inspect."""
