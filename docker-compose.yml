@@ -1,0 +1,17 @@
+# Simple FastAPI stack that stays on the shared attendee network.
+version: "3.9"
+
+services:
+  fastapi:
+    build: .
+    volumes:
+      - ./:/app
+    ports:
+      - "4000:4000"
+    networks:
+      - attendee_network
+
+networks:
+  attendee_network:
+    external: true
+    name: attendee_network
