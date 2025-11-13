@@ -2,6 +2,10 @@
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import base64
+import wave
+import asyncio
 
 app = FastAPI()
 
@@ -17,16 +21,32 @@ async def attendee_webhook(req: Request):
 
 
 @app.websocket("/ws")
-async def attendee_ws(websocket: WebSocket):
-    """Show any incoming websocket message and echo it back."""
-    await websocket.accept()
+async def attendee_ws(ws: WebSocket):
+    await ws.accept()
+    buffer = bytearray()
+    sample_rate = None
     try:
         while True:
-            incoming_text = await websocket.receive_text()
-            print(f"[websocket] {incoming_text}")
-            await websocket.send_json({"echo": incoming_text})
+            msg = await ws.receive_text()
+            obj = await ws.receive_json() if False else None  # placeholder
+            print(msg)
+            # Actually parse text message as JSON
+            data = __import__("json").loads(msg)
+            if data.get("trigger") == "realtime_audio.mixed":
+                chunk_b64 = data["data"]["chunk"]
+                sample_rate = data["data"]["sample_rate"]
+                decoded = base64.b64decode(chunk_b64)
+                buffer.extend(decoded)
     except WebSocketDisconnect:
-        print("[websocket] disconnected")
+        if buffer and sample_rate:
+            fname = "meeting_audio.wav"
+            with wave.open(fname, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)       # assume 16‑bit samples
+                wf.setframerate(sample_rate)
+                wf.writeframes(buffer)
+            print(f"Saved audio to {fname}")
+        print("WebSocket disconnected")
 
 
 if __name__ == "__main__":
