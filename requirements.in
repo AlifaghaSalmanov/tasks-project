@@ -5,3 +5,4 @@ python-dotenv
 python-multipart
 faster-whisper
 debugpy
+SQLAlchemy>=2.0

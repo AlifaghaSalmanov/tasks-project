@@ -139,3 +139,4 @@ websockets==15.0.1
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
+SQLAlchemy>=2.0,<3

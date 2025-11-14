@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.responses import JSONResponse
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -13,6 +13,8 @@ import json
 import tempfile
 from functools import lru_cache
 from faster_whisper import WhisperModel
+from sqlalchemy.orm import Session
+from db import init_db, get_db, AttendeeEvent, serialize_optional_json
 
 load_dotenv()
 
@@ -62,6 +64,11 @@ def sign_payload(payload: dict, secret_b64: str) -> str:
 
 app = FastAPI()
 
+@app.on_event("startup")
+def _startup_db():
+    # Ensure SQLite tables exist before handling requests
+    init_db()
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     # Print concise reason for 400 errors to server logs
@@ -90,13 +97,11 @@ async def debug_endpoint(request: Request):
     if not file:
         raise HTTPException(status_code=400, detail="No 'file' part in form-data")
 
-    # Read uploaded audio bytes
     try:
         content = await file.read()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {e}")
 
-    # Persist to a temporary file so ffmpeg can decode it
     suffix = ""
     filename = getattr(file, "filename", "") or ""
     if "." in filename:
@@ -108,7 +113,6 @@ async def debug_endpoint(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to store temp audio file: {e}")
 
-    # Lazy-load a single Whisper model instance (small, CPU, int8 by default)
     @lru_cache(maxsize=1)
     def get_whisper_model():
         model_size = os.getenv("WHISPER_MODEL_SIZE", "tiny.en")
@@ -125,7 +129,7 @@ async def debug_endpoint(request: Request):
             initial_prompt=prompt or None,
             beam_size=1,
         )
-        # Collect text from segments
+
         text_parts = []
         for seg in segments:
             text_parts.append(seg.text)
@@ -145,7 +149,7 @@ async def debug_endpoint(request: Request):
 
 
 @app.post("/attendee/webhook")
-async def attendee_webhook(request: Request):
+async def attendee_webhook(request: Request, db: Session = Depends(get_db)):
     raw_body = await request.body()
     # Parse the JSON body
     try:
@@ -166,6 +170,25 @@ async def attendee_webhook(request: Request):
 
     if signature_from_header != signature_from_payload:
         raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Persist the event once the signature is verified.
+    for key in ("idempotency_key", "trigger"):
+        if not payload.get(key):
+            raise HTTPException(status_code=400, detail=f"Missing `{key}` in payload")
+    event = AttendeeEvent(
+        idempotency_key=payload["idempotency_key"],
+        trigger=payload["trigger"],
+        bot_id=payload.get("bot_id"),
+        payload=serialize_optional_json(payload),
+    )
+    try:
+        db.add(event)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        # Propagate DB errors to the client for easy debugging.
+        raise HTTPException(status_code=400, detail=f"Failed to store payload: {exc}")
+
     # Signature is valid; return success response
     return JSONResponse(
         content={"message": "Webhook received successfully"},
@@ -183,7 +206,6 @@ async def attendee_ws(ws: WebSocket):
             msg = await ws.receive_text()
             obj = await ws.receive_json() if False else None  # placeholder
             print(msg)
-            # Actually parse text message as JSON
             data = __import__("json").loads(msg)
             if data.get("trigger") == "realtime_audio.mixed":
                 chunk_b64 = data["data"]["chunk"]
@@ -195,7 +217,7 @@ async def attendee_ws(ws: WebSocket):
             fname = "meeting_audio.wav"
             with wave.open(fname, "wb") as wf:
                 wf.setnchannels(1)
-                wf.setsampwidth(2)       # assume 16‑bit samples
+                wf.setsampwidth(2)
                 wf.setframerate(sample_rate)
                 wf.writeframes(buffer)
             print(f"Saved audio to {fname}")
