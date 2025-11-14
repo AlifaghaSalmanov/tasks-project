@@ -16,6 +16,21 @@ from faster_whisper import WhisperModel
 
 load_dotenv()
 
+# Optional remote debugging with debugpy (enabled only if env DEBUGPY=1)
+DEBUGPY_ENABLED = os.getenv("DEBUGPY", "0") == "1"
+if DEBUGPY_ENABLED:
+    try:
+        import debugpy
+        host = os.getenv("DEBUGPY_HOST", "0.0.0.0")
+        port = int(os.getenv("DEBUGPY_PORT", "5679"))
+        debugpy.listen((host, port))
+        print(f"[debugpy] Listening on {host}:{port}")
+        if os.getenv("DEBUGPY_WAIT_FOR_CLIENT", "0") == "1":
+            print("[debugpy] Waiting for debugger to attach...")
+            debugpy.wait_for_client()
+    except Exception as e:
+        print(f"[debugpy] Failed to initialize: {e}")
+
 
 WEBHOOK_SECRET=os.getenv("SECRET_KEY","xxxxx")
 
@@ -65,7 +80,7 @@ async def debug_endpoint(request: Request):
     Debug endpoint that mimics OpenAI's /audio/transcriptions.
     It accepts multipart/form-data with fields: file, model, optional prompt, language.
     """
-    print("Headers:", dict(request.headers))
+    print("Getting request")
     form = await request.form()
     file = form.get("file")
     model = form.get("model")
@@ -96,13 +111,14 @@ async def debug_endpoint(request: Request):
     # Lazy-load a single Whisper model instance (small, CPU, int8 by default)
     @lru_cache(maxsize=1)
     def get_whisper_model():
-        model_size = os.getenv("WHISPER_MODEL_SIZE", "tiny")
+        model_size = os.getenv("WHISPER_MODEL_SIZE", "tiny.en")
         compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
         device = os.getenv("WHISPER_DEVICE", "cpu")
         return WhisperModel(model_size, device=device, compute_type=compute_type)
 
     try:
         model_instance = get_whisper_model()
+        print("transcribing...")
         segments, info = model_instance.transcribe(
             tmp_path,
             language=language or None,
@@ -121,6 +137,8 @@ async def debug_endpoint(request: Request):
             os.remove(tmp_path)
         except Exception:
             pass
+        
+    print("transcript_text =", transcript_text)
 
     # Match OpenAI response schema minimal field used upstream
     return JSONResponse(content={"text": transcript_text}, status_code=200)
@@ -148,7 +166,6 @@ async def attendee_webhook(request: Request):
 
     if signature_from_header != signature_from_payload:
         raise HTTPException(status_code=400, detail="Invalid signature")
-
     # Signature is valid; return success response
     return JSONResponse(
         content={"message": "Webhook received successfully"},
@@ -186,4 +203,4 @@ async def attendee_ws(ws: WebSocket):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=4000)
+    uvicorn.run(app, host="0.0.0.0", port=4000, reload=True)
