@@ -15,7 +15,7 @@ load_dotenv()
 
 WEBHOOK_SECRET=os.getenv("SECRET_KEY","xxxxx")
 
-print(WEBHOOK_SECRET[:3])
+print(WEBHOOK_SECRET[:3]+"..."+WEBHOOK_SECRET[-3:])
 
 
 def verify_signature(secret: str, payload: str, signature: str) -> bool:
