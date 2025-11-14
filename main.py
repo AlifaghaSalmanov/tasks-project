@@ -15,6 +15,7 @@ from functools import lru_cache
 from faster_whisper import WhisperModel
 from sqlalchemy.orm import Session
 from db import init_db, get_db, AttendeeEvent, serialize_optional_json
+from ai import summarize_text
 
 load_dotenv()
 
@@ -205,6 +206,30 @@ async def attendee_webhook(request: Request, db: Session = Depends(get_db)):
         content={"message": "Webhook received successfully"},
         status_code=200
     )
+
+
+@app.get("/attendee/{bot_id}/summary")
+async def attendee_summary(bot_id: str, db: Session = Depends(get_db)):
+    """Summarize all transcript text stored for a given bot."""
+    records = (
+        db.query(AttendeeEvent)
+        .filter(AttendeeEvent.bot_id == bot_id)
+        .order_by(AttendeeEvent.timestamp_ms.asc())
+        .all()
+    )
+    if not records:
+        raise HTTPException(status_code=404, detail="No events found for this bot.")
+
+    transcripts = [row.transcript_text for row in records if row.transcript_text]
+    if not transcripts:
+        raise HTTPException(status_code=400, detail="No transcript text available to summarize.")
+
+    try:
+        summary = summarize_text("\n".join(transcripts))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to summarize transcript: {exc}")
+
+    return {"bot_id": bot_id, "summary": summary}
 
 
 @app.websocket("/ws")
