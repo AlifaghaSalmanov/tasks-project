@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import os
 import hmac
 import hashlib
+import json
 
 load_dotenv()
 
@@ -18,19 +19,28 @@ WEBHOOK_SECRET=os.getenv("SECRET_KEY","xxxxx")
 print(WEBHOOK_SECRET[:3]+"..."+WEBHOOK_SECRET[-3:])
 
 
-def verify_signature(secret: str, payload: str, signature: str) -> bool:
+def sign_payload(payload: dict, secret_b64: str) -> str:
     """
-    Verify the HMAC signature of the payload.
+    Sign a webhook payload using HMAC-SHA256.
+    Returns a base64-encoded HMAC-SHA256 signature.
     """
-    # Calculate the HMAC using SHA-256
-    calculated_signature = hmac.new(
-        key=secret.encode('utf-8'),  # Webhook secret
-        msg=payload.encode('utf-8'),  # The raw payload
-        digestmod=hashlib.sha256
-    ).hexdigest()
-    
-    # Compare the calculated signature with the provided signature
-    return hmac.compare_digest(calculated_signature, signature)
+    # Convert payload into a canonical JSON string (stable keys, no spaces)
+    payload_json = json.dumps(
+        payload,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    # Secret provided by the dashboard is base64-encoded; decode to raw bytes
+    secret_decoded = base64.b64decode(secret_b64)
+    # Compute binary HMAC-SHA256 digest over the canonical JSON string
+    signature_bytes = hmac.new(
+        secret_decoded,
+        payload_json.encode("utf-8"),
+        hashlib.sha256
+    ).digest()
+    # Return base64-encoded signature string
+    return base64.b64encode(signature_bytes).decode("utf-8")
 
 app = FastAPI()
 
@@ -47,27 +57,32 @@ async def root():
 
 @app.post("/attendee/webhook")
 async def attendee_webhook(request: Request):
-    payload = await request.body()
-    payload_str = payload.decode('utf-8')  # Convert to string if it's binary
-    # Extract webhook signature header; support both common names
-    signature = request.headers.get('X-Webhook-Signature') or request.headers.get('X-Signature')
-    if not signature:
-        raise HTTPException(status_code=400, detail="Signature missing in header")
-    # Normalize possible formats like 'sha256=<hex>'
-    signature = signature.strip()
-    if signature.lower().startswith('sha256='):
-        signature = signature.split('=', 1)[1]
-    signature = signature.lower()
+    raw_body = await request.body()
+    # Parse the JSON body
+    try:
+        payload = json.loads(raw_body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    print("Received payload =", payload)
 
-    # Verify the signature
-    if not verify_signature(WEBHOOK_SECRET, payload_str, signature):
+    # Get signature from header
+    signature_from_header = request.headers.get("X-Webhook-Signature")
+    if not signature_from_header:
+        raise HTTPException(status_code=400, detail="Signature missing in header")
+
+    # Compute expected signature using the shared secret
+    signature_from_payload = sign_payload(payload, WEBHOOK_SECRET)
+    print("signature_from_header =", signature_from_header)
+    print("signature_from_payload =", signature_from_payload)
+
+    if signature_from_header != signature_from_payload:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # Process the valid webhook payload here (e.g., log it, trigger further actions)
-    return JSONResponse(content={
-        "message": "Webhook received and signature verified successfully.",
-        "received_payload": payload_str  # Print the first 100 characters of the payload for reference
-    })
+    # Signature is valid; return success response
+    return JSONResponse(
+        content={"message": "Webhook received successfully"},
+        status_code=200
+    )
 
 
 @app.websocket("/ws")
