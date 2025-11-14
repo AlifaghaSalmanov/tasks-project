@@ -2,3 +2,4 @@ uvicorn[standard]
 fastapi
 requests
 python-dotenv
+python-multipart
