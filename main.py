@@ -19,6 +19,7 @@ import hashlib
 import json
 import tempfile
 from functools import lru_cache
+from datetime import datetime, timezone
 from faster_whisper import WhisperModel
 from sqlalchemy.orm import Session
 import requests
@@ -235,7 +236,9 @@ async def attendee_summary(bot_id: str, db: Session = Depends(get_db)):
         {
             "speaker_name": row.speaker_name,
             "speaker_uuid": row.speaker_uuid,
-            "timestamp_ms": row.timestamp_ms,
+            "timestamp": datetime.fromtimestamp(row.timestamp_ms / 1000, tz=timezone.utc).isoformat()
+            if row.timestamp_ms is not None
+            else None,
             "duration_ms": row.duration_ms,
             "text": row.transcript_text,
             "is_host": row.speaker_is_host,
