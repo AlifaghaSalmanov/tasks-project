@@ -96,7 +96,7 @@ async def debug_endpoint(request: Request):
     # Lazy-load a single Whisper model instance (small, CPU, int8 by default)
     @lru_cache(maxsize=1)
     def get_whisper_model():
-        model_size = os.getenv("WHISPER_MODEL_SIZE", "small")
+        model_size = os.getenv("WHISPER_MODEL_SIZE", "tiny")
         compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
         device = os.getenv("WHISPER_DEVICE", "cpu")
         return WhisperModel(model_size, device=device, compute_type=compute_type)
