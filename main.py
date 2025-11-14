@@ -34,6 +34,13 @@ def verify_signature(secret: str, payload: str, signature: str) -> bool:
 
 app = FastAPI()
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # Print concise reason for 400 errors to server logs
+    if exc.status_code == 400:
+        print(f"[HTTP 400] {request.method} {request.url.path} - {exc.detail}")
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 @app.get("/")
 async def root():
     return {"message": "Hello, World!"}
