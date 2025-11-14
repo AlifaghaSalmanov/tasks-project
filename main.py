@@ -55,6 +55,25 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def root():
     return {"message": "Hello, World!"}
 
+
+@app.post("/debug")
+async def debug_endpoint(request: Request):
+    raw_body = await request.body()
+    print("Raw body:", raw_body)
+    
+    # Try to parse as JSON if possible
+    try:
+        json_body = json.loads(raw_body)
+        print("JSON body:", json_body)
+    except json.JSONDecodeError:
+        print("Body is not valid JSON")
+    
+    # Also print headers for debugging
+    print("Headers:", dict(request.headers))
+    
+    return {"message": "Request body printed to console"}
+
+
 @app.post("/attendee/webhook")
 async def attendee_webhook(request: Request):
     raw_body = await request.body()
