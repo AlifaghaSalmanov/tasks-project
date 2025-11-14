@@ -247,7 +247,12 @@ async def attendee_summary(bot_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="No transcript text available to summarize.")
 
     try:
-        summary = summarize_text("\n".join(item["text"] for item in transcripts))
+        # Feed speaker labels to AI so summary keeps names.
+        conversation = "\n".join(
+            f"{item['speaker_name'] or 'Unknown'}: {item['text']}"
+            for item in transcripts
+        )
+        summary = summarize_text(conversation)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to summarize transcript: {exc}")
 
