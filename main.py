@@ -175,11 +175,22 @@ async def attendee_webhook(request: Request, db: Session = Depends(get_db)):
     for key in ("idempotency_key", "trigger"):
         if not payload.get(key):
             raise HTTPException(status_code=400, detail=f"Missing `{key}` in payload")
+    # Unpack nested attendee data for storage.
+    data_block = payload.get("data") or {}
+    transcription = (data_block.get("transcription") or {}).get("transcript")
+
     event = AttendeeEvent(
         idempotency_key=payload["idempotency_key"],
         trigger=payload["trigger"],
         bot_id=payload.get("bot_id"),
-        payload=serialize_optional_json(payload),
+        bot_metadata=serialize_optional_json(payload.get("bot_metadata")),
+        duration_ms=data_block.get("duration_ms"),
+        speaker_name=data_block.get("speaker_name"),
+        speaker_uuid=data_block.get("speaker_uuid"),
+        timestamp_ms=data_block.get("timestamp_ms"),
+        transcript_text=transcription,
+        speaker_is_host=data_block.get("speaker_is_host"),
+        speaker_user_uuid=data_block.get("speaker_user_uuid"),
     )
     try:
         db.add(event)

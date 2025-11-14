@@ -6,7 +6,7 @@ import json
 import os
 from typing import Generator
 
-from sqlalchemy import Column, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, Column, Integer, String, Text, create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 
@@ -28,7 +28,14 @@ class AttendeeEvent(Base):
     idempotency_key = Column(String, nullable=False, unique=True, index=True)
     trigger = Column(String, nullable=False)
     bot_id = Column(String, nullable=True)
-    payload = Column(Text, nullable=False)
+    bot_metadata = Column(Text, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    speaker_name = Column(String, nullable=True)
+    speaker_uuid = Column(String, nullable=True)
+    timestamp_ms = Column(Integer, nullable=True)
+    transcript_text = Column(Text, nullable=True)
+    speaker_is_host = Column(Boolean, nullable=True)
+    speaker_user_uuid = Column(String, nullable=True)
 
 
 def init_db() -> None:
@@ -48,7 +55,7 @@ def get_db() -> Generator[Session, None, None]:
 def serialize_optional_json(value) -> str:
     """Serialize JSON-like payloads; FastAPI expects strings for Text columns."""
     if value is None:
-        return ""
+        return None
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False)
