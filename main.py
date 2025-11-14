@@ -58,20 +58,49 @@ async def root():
 
 @app.post("/debug/audio/transcriptions")
 async def debug_endpoint(request: Request):
-    raw_body = await request.body()
-    print("Raw body:", raw_body)
-    
-    # Try to parse as JSON if possible
-    try:
-        json_body = json.loads(raw_body)
-        print("JSON body:", json_body)
-    except json.JSONDecodeError:
-        print("Body is not valid JSON")
-    
-    # Also print headers for debugging
+    """
+    Debug endpoint that mimics OpenAI's /audio/transcriptions.
+    It accepts multipart/form-data with fields: file, model, optional prompt, language.
+    """
     print("Headers:", dict(request.headers))
-    
-    return {"message": "Request body printed to console"}
+    form = await request.form()
+    file = form.get("file")
+    model = form.get("model")
+    prompt = form.get("prompt")
+    language = form.get("language")
+
+    file_info = {}
+    try:
+        if file:
+            # Starlette UploadFile
+            content = await file.read()
+            file_info = {
+                "filename": getattr(file, "filename", None),
+                "content_type": getattr(file, "content_type", None),
+                "size_bytes": len(content),
+            }
+        else:
+            file_info = {"warning": "No file part received"}
+    except Exception as e:
+        file_info = {"error": f"Failed to read file: {e}"}
+
+    print("Form fields:", {"model": model, "prompt": prompt, "language": language})
+    print("File info:", file_info)
+
+    # Return minimal compatible structure with OpenAI response schema
+    # Upstream code reads `result.get('text', '')`
+    return JSONResponse(
+        content={
+            "text": "",
+            "debug": {
+                "model": model,
+                "prompt": prompt,
+                "language": language,
+                "file": file_info,
+            },
+        },
+        status_code=200,
+    )
 
 
 @app.post("/attendee/webhook")
