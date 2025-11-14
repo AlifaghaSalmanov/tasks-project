@@ -68,3 +68,5 @@ websockets==15.0.1
     # via uvicorn
 python-multipart==0.0.9
     # via starlette
+faster-whisper==1.0.3
+    # via -r requirements.in

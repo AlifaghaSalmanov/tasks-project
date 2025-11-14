@@ -10,6 +10,9 @@ import os
 import hmac
 import hashlib
 import json
+import tempfile
+from functools import lru_cache
+from faster_whisper import WhisperModel
 
 load_dotenv()
 
@@ -69,38 +72,58 @@ async def debug_endpoint(request: Request):
     prompt = form.get("prompt")
     language = form.get("language")
 
-    file_info = {}
+    if not file:
+        raise HTTPException(status_code=400, detail="No 'file' part in form-data")
+
+    # Read uploaded audio bytes
     try:
-        if file:
-            # Starlette UploadFile
-            content = await file.read()
-            file_info = {
-                "filename": getattr(file, "filename", None),
-                "content_type": getattr(file, "content_type", None),
-                "size_bytes": len(content),
-            }
-        else:
-            file_info = {"warning": "No file part received"}
+        content = await file.read()
     except Exception as e:
-        file_info = {"error": f"Failed to read file: {e}"}
+        raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {e}")
 
-    print("Form fields:", {"model": model, "prompt": prompt, "language": language})
-    print("File info:", file_info)
+    # Persist to a temporary file so ffmpeg can decode it
+    suffix = ""
+    filename = getattr(file, "filename", "") or ""
+    if "." in filename:
+        suffix = "." + filename.split(".")[-1].lower()
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store temp audio file: {e}")
 
-    # Return minimal compatible structure with OpenAI response schema
-    # Upstream code reads `result.get('text', '')`
-    return JSONResponse(
-        content={
-            "text": "",
-            "debug": {
-                "model": model,
-                "prompt": prompt,
-                "language": language,
-                "file": file_info,
-            },
-        },
-        status_code=200,
-    )
+    # Lazy-load a single Whisper model instance (small, CPU, int8 by default)
+    @lru_cache(maxsize=1)
+    def get_whisper_model():
+        model_size = os.getenv("WHISPER_MODEL_SIZE", "small")
+        compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+        device = os.getenv("WHISPER_DEVICE", "cpu")
+        return WhisperModel(model_size, device=device, compute_type=compute_type)
+
+    try:
+        model_instance = get_whisper_model()
+        segments, info = model_instance.transcribe(
+            tmp_path,
+            language=language or None,
+            initial_prompt=prompt or None,
+            beam_size=1,
+        )
+        # Collect text from segments
+        text_parts = []
+        for seg in segments:
+            text_parts.append(seg.text)
+        transcript_text = "".join(text_parts).strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+    # Match OpenAI response schema minimal field used upstream
+    return JSONResponse(content={"text": transcript_text}, status_code=200)
 
 
 @app.post("/attendee/webhook")
