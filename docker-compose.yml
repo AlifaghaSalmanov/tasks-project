@@ -7,7 +7,6 @@ services:
       - ./:/app
     ports:
       - "4000:4000"
-      - "5679:5679"
     env_file:
       - .env
     networks:

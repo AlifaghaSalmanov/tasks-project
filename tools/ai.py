@@ -1,16 +1,14 @@
-"""Thin AI helper that wraps DeepSeek for text summaries."""
-
 from __future__ import annotations
 
 import os
 from functools import lru_cache
 
+from faster_whisper.transcribe import WhisperModel
 from openai import OpenAI
 
 
 @lru_cache(maxsize=1)
 def _get_client() -> OpenAI:
-    """Build the OpenAI client once so every request reuses the same session."""
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         raise RuntimeError("Missing `DEEPSEEK_API_KEY` environment variable.")
@@ -18,8 +16,14 @@ def _get_client() -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
+def get_whisper_model():
+    model_size = os.getenv("WHISPER_MODEL_SIZE", "tiny.en")
+    compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+    device = os.getenv("WHISPER_DEVICE", "cpu")
+    return WhisperModel(model_size, device=device, compute_type=compute_type)
+
+
 def summarize_text(source_text: str) -> str:
-    """Return a concise summary for the provided transcript text."""
     cleaned = (source_text or "").strip()
     if not cleaned:
         raise ValueError("Empty transcript cannot be summarized.")
@@ -34,7 +38,7 @@ def summarize_text(source_text: str) -> str:
             },
             {
                 "role": "user",
-                "content": f"Summarize this conversation briefly, don't add words like 'Based on the transcript', just write summary, Given people name also in summary: {cleaned}",
+                "content": f"Summarize this conversation briefly, without adding phrases like 'Based on the transcript.' Also, include the names of people in the summary: {cleaned}",
             },
         ],
         stream=False,
