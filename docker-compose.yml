@@ -8,11 +8,8 @@ services:
     ports:
       - "4000:4000"
       - "5679:5679"
-    environment:
-      - DEBUGPY=1
-      - DEBUGPY_WAIT_FOR_CLIENT=1
-      - DEBUGPY_HOST=0.0.0.0
-      - DEBUGPY_PORT=5679
+    env_file:
+      - .env
     networks:
       - attendee_network
 
