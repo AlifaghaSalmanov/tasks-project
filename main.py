@@ -1,4 +1,11 @@
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -14,6 +21,7 @@ import tempfile
 from functools import lru_cache
 from faster_whisper import WhisperModel
 from sqlalchemy.orm import Session
+import requests
 from db import init_db, get_db, AttendeeEvent, serialize_optional_json
 from ai import summarize_text
 
@@ -36,6 +44,8 @@ if DEBUGPY_ENABLED:
 
 
 WEBHOOK_SECRET=os.getenv("SECRET_KEY","xxxxx")
+BOT_API_BASE = os.getenv("BOT_API_BASE", "http://localhost:8000")
+BOT_API_TOKEN = os.getenv("BOT_API_TOKEN", "")
 
 print(WEBHOOK_SECRET[:3]+"..."+WEBHOOK_SECRET[-3:])
 
@@ -230,6 +240,43 @@ async def attendee_summary(bot_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=f"Failed to summarize transcript: {exc}")
 
     return {"bot_id": bot_id, "summary": summary}
+
+
+def _bot_headers() -> dict:
+    if not BOT_API_TOKEN:
+        raise HTTPException(status_code=500, detail="Missing `BOT_API_TOKEN` configuration.")
+    return {
+        "Authorization": f"Token {BOT_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+
+@app.post("/bots")
+async def create_bot_endpoint(body: dict):
+    """Proxy request to upstream bot creation service."""
+    upstream_url = f"{BOT_API_BASE}/api/v1/bots"
+    try:
+        response = requests.post(upstream_url, headers=_bot_headers(), json=body, timeout=30)
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Bot service error: {exc}")
+    return response.json()
+
+
+@app.post("/bots/{bot_id}/leave")
+async def leave_bot_endpoint(bot_id: str):
+    """Instruct upstream service to remove the bot from its meeting."""
+    upstream_url = f"{BOT_API_BASE}/api/v1/bots/{bot_id}/leave"
+    try:
+        response = requests.post(upstream_url, headers=_bot_headers(), timeout=30)
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Bot service error: {exc}")
+    return response.json()
 
 
 @app.websocket("/ws")
