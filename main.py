@@ -230,16 +230,28 @@ async def attendee_summary(bot_id: str, db: Session = Depends(get_db)):
     if not records:
         raise HTTPException(status_code=404, detail="No events found for this bot.")
 
-    transcripts = [row.transcript_text for row in records if row.transcript_text]
+    # Collect every utterance so the client can see who said what and when.
+    transcripts = [
+        {
+            "speaker_name": row.speaker_name,
+            "speaker_uuid": row.speaker_uuid,
+            "timestamp_ms": row.timestamp_ms,
+            "duration_ms": row.duration_ms,
+            "text": row.transcript_text,
+            "is_host": row.speaker_is_host,
+        }
+        for row in records
+        if row.transcript_text
+    ]
     if not transcripts:
         raise HTTPException(status_code=400, detail="No transcript text available to summarize.")
 
     try:
-        summary = summarize_text("\n".join(transcripts))
+        summary = summarize_text("\n".join(item["text"] for item in transcripts))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to summarize transcript: {exc}")
 
-    return {"bot_id": bot_id, "summary": summary}
+    return {"bot_id": bot_id, "summary": summary, "transcripts": transcripts}
 
 
 def _bot_headers() -> dict:
