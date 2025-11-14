@@ -34,7 +34,7 @@ def summarize_text(source_text: str) -> str:
             },
             {
                 "role": "user",
-                "content": f"Summarize this transcript in 3 sentences max:\n{cleaned}",
+                "content": f"Summarize this conversation briefly: {cleaned}",
             },
         ],
         stream=False,
