@@ -42,12 +42,15 @@ async def root():
 async def attendee_webhook(request: Request):
     payload = await request.body()
     payload_str = payload.decode('utf-8')  # Convert to string if it's binary
-
-    # Extract the signature from the headers (assuming the header is called 'X-Signature')
-    signature = request.headers.get('X-Signature')
-
+    # Extract webhook signature header; support both common names
+    signature = request.headers.get('X-Webhook-Signature') or request.headers.get('X-Signature')
     if not signature:
         raise HTTPException(status_code=400, detail="Signature missing in header")
+    # Normalize possible formats like 'sha256=<hex>'
+    signature = signature.strip()
+    if signature.lower().startswith('sha256='):
+        signature = signature.split('=', 1)[1]
+    signature = signature.lower()
 
     # Verify the signature
     if not verify_signature(WEBHOOK_SECRET, payload_str, signature):
