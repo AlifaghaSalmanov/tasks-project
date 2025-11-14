@@ -1,11 +1,34 @@
-
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import base64
 import wave
 import asyncio
+from dotenv import load_dotenv
+import os
+import hmac
+import hashlib
+
+load_dotenv()
+
+
+WEBHOOK_SECRET=os.getenv("SECRET_KEY")
+
+
+def verify_signature(secret: str, payload: str, signature: str) -> bool:
+    """
+    Verify the HMAC signature of the payload.
+    """
+    # Calculate the HMAC using SHA-256
+    calculated_signature = hmac.new(
+        key=secret.encode('utf-8'),  # Webhook secret
+        msg=payload.encode('utf-8'),  # The raw payload
+        digestmod=hashlib.sha256
+    ).hexdigest()
+    
+    # Compare the calculated signature with the provided signature
+    return hmac.compare_digest(calculated_signature, signature)
 
 app = FastAPI()
 
@@ -14,10 +37,25 @@ async def root():
     return {"message": "Hello, World!"}
 
 @app.post("/attendee/webhook")
-async def attendee_webhook(req: Request):
-    """Log webhook payloads so they are easy to inspect."""
-    print(await req.json())
-    return JSONResponse(content={"message": "Hello, World!"})
+async def attendee_webhook(request: Request):
+    payload = await request.body()
+    payload_str = payload.decode('utf-8')  # Convert to string if it's binary
+
+    # Extract the signature from the headers (assuming the header is called 'X-Signature')
+    signature = request.headers.get('X-Signature')
+
+    if not signature:
+        raise HTTPException(status_code=400, detail="Signature missing in header")
+
+    # Verify the signature
+    if not verify_signature(WEBHOOK_SECRET, payload_str, signature):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Process the valid webhook payload here (e.g., log it, trigger further actions)
+    return JSONResponse(content={
+        "message": "Webhook received and signature verified successfully.",
+        "received_payload": payload_str  # Print the first 100 characters of the payload for reference
+    })
 
 
 @app.websocket("/ws")
