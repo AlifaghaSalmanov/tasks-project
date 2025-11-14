@@ -1,5 +1,4 @@
 # Simple FastAPI stack that stays on the shared attendee network.
-version: "3.9"
 
 services:
   fastapi:
@@ -19,5 +18,5 @@ services:
 
 networks:
   attendee_network:
+    external: true
     name: attendee_network
-    driver: bridge
