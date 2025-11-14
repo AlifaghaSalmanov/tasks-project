@@ -56,7 +56,7 @@ async def root():
     return {"message": "Hello, World!"}
 
 
-@app.post("/debug")
+@app.post("/debug/audio/transcriptions")
 async def debug_endpoint(request: Request):
     raw_body = await request.body()
     print("Raw body:", raw_body)
